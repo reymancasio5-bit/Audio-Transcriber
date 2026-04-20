@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceScribe - Audio Transcriber</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1c2030;
+    --border: #2a2f42;
+    --border2: #363d54;
+    --accent: #6ee7b7;
+    --accent2: #34d399;
+    --accent-dim: rgba(110,231,183,0.12);
+    --accent-glow: rgba(110,231,183,0.06);
+    --text: #e8eaf2;
+    --text-muted: #7b82a0;
+    --text-dim: #4a5070;
+    --speaker1: #93c5fd;
+    --speaker1-bg: rgba(147,197,253,0.08);
+    --speaker2: #f9a8d4;
+    --speaker2-bg: rgba(249,168,212,0.08);
+    --red: #f87171;
+    --amber: #fbbf24;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Subtle grid bg */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(110,231,183,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(110,231,183,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 2rem 1.5rem 4rem;
+    flex: 1;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(110,231,183,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .logo svg { width: 22px; height: 22px; }
+
+  .title-group h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .title-group p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  .badge {
+    margin-left: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(110,231,183,0.2);
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.05em;
+  }
+
+  /* Mode selector */
+  .mode-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 0.55rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .mode-btn.active {
+    background: var(--surface2);
+    color: var(--accent);
+    border: 1px solid var(--border2);
+  }
+
+  .mode-btn:hover:not(.active) { color: var(--text); }
+
+  /* Panels */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1.5px dashed var(--border2);
+    border-radius: var(--radius);
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, var(--accent-glow), transparent 60%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+
+  .upload-zone:hover::before, .upload-zone.dragover::before { opacity: 1; }
+
+  .upload-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(110,231,183,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+  }
+
+  .upload-icon svg { width: 26px; height: 26px; stroke: var(--accent); }
+
+  .upload-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.2rem;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+  }
+
+  .upload-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 1.2rem;
+  }
+
+  .upload-btn {
+    display: inline-block;
+    padding: 0.5rem 1.4rem;
+    border: 1px solid rgba(110,231,183,0.4);
+    border-radius: 20px;
+    color: var(--accent);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.03em;
+  }
+
+  .upload-btn:hover {
+    background: var(--accent-dim);
+  }
+
+  #file-input { display: none; }
+
+  /* Audio player */
+  .player-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    display: none;
+  }
+
+  .player-card.show { display: block; }
+
+  .file-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .file-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--accent-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .file-icon svg { width: 18px; height: 18px; stroke: var(--accent); }
+
+  .file-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-size { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
+  .clear-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .clear-btn:hover { color: var(--red); }
+
+  audio {
+    width: 100%;
+    height: 36px;
+    border-radius: 8px;
+    outline: none;
+    filter: invert(0);
+  }
+
+  /* Settings row */
+  .settings-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .setting-group label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+
+  .setting-group select, .setting-group input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.82rem;
+    padding: 0.5rem 0.75rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .setting-group select:focus, .setting-group input:focus {
+    border-color: var(--accent);
+  }
+
+  .setting-group select option { background: var(--surface2); }
+
+  /* Action buttons */
+  .action-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .btn-primary {
+    flex: 1;
+    padding: 0.75rem;
+    background: var(--accent);
+    color: #0d1a12;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
+  .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Info box */
+  .info-box {
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    color: #d4a017;
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+  }
+
+  .info-box strong { color: var(--amber); }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 1rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    min-height: 42px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+
+  .status-dot.listening { background: var(--accent); animation: pulse 1.2s infinite; }
+  .status-dot.error { background: var(--red); }
+  .status-dot.done { background: var(--accent); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Waveform viz */
+  #waveform {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    margin-left: auto;
+  }
+
+  .wave-bar {
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    opacity: 0.4;
+    height: 4px;
+    transition: height 0.1s;
+  }
+
+  .wave-bar.active { animation: wave 0.8s ease-in-out infinite; opacity: 0.9; }
+  .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+  .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+  .wave-bar:nth-child(4) { animation-delay: 0.15s; }
+  .wave-bar:nth-child(5) { animation-delay: 0.05s; }
+
+  @keyframes wave {
+    0%, 100% { height: 4px; }
+    50% { height: 20px; }
+  }
+
+  /* Transcript area */
+  .transcript-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .transcript-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .word-count {
+    margin-left: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+  }
+
+  .transcript-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 280px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding: 1.25rem;
+    font-size: 0.88rem;
+    line-height: 1.8;
+    color: var(--text);
+    scroll-behavior: smooth;
+  }
+
+  .transcript-box::-webkit-scrollbar { width: 6px; }
+  .transcript-box::-webkit-scrollbar-track { background: transparent; }
+  .transcript-box::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  .transcript-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: var(--text-dim);
+    gap: 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  .transcript-empty svg { width: 36px; height: 36px; opacity: 0.4; }
+
+  /* Speaker lines */
+  .speaker-line {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius-sm);
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .speaker-line.s1 { background: var(--speaker1-bg); }
+  .speaker-line.s2 { background: var(--speaker2-bg); }
+
+  .speaker-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 500;
+    flex-shrink: 0;
+    padding-top: 2px;
+    letter-spacing: 0.04em;
+    min-width: 70px;
+  }
+
+  .s1 .speaker-label { color: var(--speaker1); }
+  .s2 .speaker-label { color: var(--speaker2); }
+
+  .speaker-text { color: var(--text); line-height: 1.65; font-size: 0.85rem; }
+
+  .interim { color: var(--text-muted); font-style: italic; }
+
+  /* Export row */
+  .export-row {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* Live panel */
+  .live-instructions {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .instruction-card h4 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .instruction-card.s1 h4 { color: var(--speaker1); }
+  .instruction-card.s2 h4 { color: var(--speaker2); }
+
+  .instruction-card p {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .key-combo {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--text);
+    margin: 2px 2px 0;
+  }
+
+  .mic-controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .mic-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .mic-btn.s1 { color: var(--speaker1); border-color: rgba(147,197,253,0.3); }
+  .mic-btn.s1:hover, .mic-btn.s1.recording { background: var(--speaker1-bg); border-color: rgba(147,197,253,0.6); }
+  .mic-btn.s2 { color: var(--speaker2); border-color: rgba(249,168,212,0.3); }
+  .mic-btn.s2:hover, .mic-btn.s2.recording { background: var(--speaker2-bg); border-color: rgba(249,168,212,0.6); }
+  .mic-btn.recording { animation: borderPulse 1.2s infinite; }
+
+  @keyframes borderPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(110,231,183,0.1); }
+    50% { box-shadow: 0 0 0 4px rgba(110,231,183,0.1); }
+  }
+
+  .stop-all-btn {
+    padding: 0.75rem 1.2rem;
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: var(--radius-sm);
+    color: var(--red);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .stop-all-btn:hover { background: rgba(248,113,113,0.15); }
+
+  /* Support notice */
+  .support-notice {
+    background: rgba(248,113,113,0.06);
+    border: 1px solid rgba(248,113,113,0.2);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    color: #f87171;
+    margin-bottom: 1rem;
+    display: none;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .settings-row { grid-template-columns: 1fr; }
+    .live-instructions { grid-template-columns: 1fr; }
+    .mic-controls { flex-direction: column; }
+    .export-row { gap: 0.4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent)">
+        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="8" y1="22" x2="16" y2="22"/>
+      </svg>
+    </div>
+    <div class="title-group">
+      <h1>VoiceScribe</h1>
+      <p>Audio Transcription Tool</p>
+    </div>
+    <span class="badge">100% FREE &bull; NO API</span>
+  </header>
+
+  <!-- Mode toggle -->
+  <div class="mode-bar">
+    <button class="mode-btn active" onclick="switchMode('file')">File Upload</button>
+    <button class="mode-btn" onclick="switchMode('live')">Live Microphone</button>
+  </div>
+
+  <!-- Unsupported notice -->
+  <div class="support-notice" id="support-notice">
+    Your browser does not support the Web Speech API. Please use Google Chrome or Microsoft Edge for transcription.
+  </div>
+
+  <!-- === FILE UPLOAD PANEL === -->
+  <div class="panel active" id="panel-file">
+
+    <div class="info-box">
+      <strong>How it works:</strong> Upload an audio file, set playback. Hit "Start Transcribing" then play the audio. Your browser's built-in speech engine will transcribe in real time. Assign Speaker 1 (man) and Speaker 2 (woman) as needed. Works best in <strong>Chrome</strong> with clear audio.
+    </div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept="audio/*,video/*" onchange="handleFile(this.files[0])">
+      <div class="upload-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <p class="upload-title">Drop your audio file here</p>
+      <p class="upload-sub">MP3, WAV, M4A, OGG, FLAC, MP4 &mdash; any audio format</p>
+      <span class="upload-btn">Browse files</span>
+    </div>
+
+    <!-- Player -->
+    <div class="player-card" id="player-card">
+      <div class="file-info">
+        <div class="file-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V5l12-2v13"/>
+            <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+          </svg>
+        </div>
+        <div>
+          <div class="file-name" id="file-name-display"></div>
+          <div class="file-size" id="file-size-display"></div>
+        </div>
+        <button class="clear-btn" onclick="clearFile()" title="Remove file">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <audio id="audio-player" controls></audio>
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-row">
+      <div class="setting-group">
+        <label>Language</label>
+        <select id="lang-select">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-AU">English (Australia)</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="it-IT">Italian</option>
+          <option value="pt-BR">Portuguese (BR)</option>
+          <option value="ja-JP">Japanese</option>
+          <option value="ko-KR">Korean</option>
+          <option value="zh-CN">Chinese (Mandarin)</option>
+          <option value="tl-PH">Filipino (Tagalog)</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label>Speaker Mode</label>
+        <select id="speaker-mode">
+          <option value="single">Single Speaker</option>
+          <option value="manual" selected>Manual Speaker Toggle</option>
+          <option value="auto">Auto (Best Guess)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-row">
+      <button class="btn-primary" id="transcribe-btn" onclick="startFileTranscription()" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        Start Transcribing
+      </button>
+      <button class="btn-secondary" id="stop-btn" onclick="stopTranscription()" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        Stop
+      </button>
+      <button class="btn-secondary" id="toggle-speaker-btn" onclick="toggleSpeaker()" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Switch Speaker
+      </button>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="status-bar">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Ready. Upload an audio file to begin.</span>
+      <div id="waveform">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+    </div>
+
+    <!-- Transcript -->
+    <div class="transcript-header">
+      <span class="transcript-label">Transcript</span>
+      <span class="word-count" id="word-count">0 words</span>
+    </div>
+
+    <div class="transcript-box" id="transcript-box">
+      <div class="transcript-empty" id="transcript-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <span>Transcript will appear here</span>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="export-row">
+      <button class="btn-secondary" onclick="exportTxt()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Export .TXT
+      </button>
+      <button class="btn-secondary" onclick="exportSrt()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Export .SRT
+      </button>
+      <button class="btn-secondary" onclick="copyTranscript()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy
+      </button>
+      <button class="btn-secondary" onclick="clearTranscript()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- === LIVE MIC PANEL === -->
+  <div class="panel" id="panel-live">
+
+    <div class="live-instructions">
+      <div class="instruction-card s1">
+        <h4>Speaker 1 (Man)</h4>
+        <p>Click <span class="key-combo">Mic Speaker 1</span> button or press <span class="key-combo">1</span> to start recording as Speaker 1.</p>
+      </div>
+      <div class="instruction-card s2">
+        <h4>Speaker 2 (Woman)</h4>
+        <p>Click <span class="key-combo">Mic Speaker 2</span> button or press <span class="key-combo">2</span> to start recording as Speaker 2.</p>
+      </div>
+    </div>
+
+    <div class="settings-row" style="margin-bottom:1rem">
+      <div class="setting-group">
+        <label>Language</label>
+        <select id="live-lang-select">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-AU">English (Australia)</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="it-IT">Italian</option>
+          <option value="pt-BR">Portuguese (BR)</option>
+          <option value="ja-JP">Japanese</option>
+          <option value="ko-KR">Korean</option>
+          <option value="zh-CN">Chinese (Mandarin)</option>
+          <option value="tl-PH">Filipino (Tagalog)</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label>Speaker 1 Name</label>
+        <input type="text" id="s1-name" value="Speaker 1" placeholder="e.g. John">
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div class="setting-group">
+        <label>Speaker 2 Name</label>
+        <input type="text" id="s2-name" value="Speaker 2" placeholder="e.g. Maria">
+      </div>
+      <div class="setting-group">
+        <label>&nbsp;</label>
+        <div style="display:flex;gap:0.5rem;padding-top:2px">
+          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="no-emdash" checked style="width:auto;padding:0"> Remove em dashes
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="mic-controls">
+      <button class="mic-btn s1" id="mic-s1" onclick="startLiveMic(1)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        Mic Speaker 1
+      </button>
+      <button class="mic-btn s2" id="mic-s2" onclick="startLiveMic(2)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        Mic Speaker 2
+      </button>
+      <button class="stop-all-btn" onclick="stopLiveMic()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        Stop
+      </button>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="live-status-bar">
+      <div class="status-dot" id="live-status-dot"></div>
+      <span id="live-status-text">Ready. Click a mic button to begin.</span>
+      <div id="live-waveform">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+    </div>
+
+    <!-- Transcript -->
+    <div class="transcript-header">
+      <span class="transcript-label">Live Transcript</span>
+      <span class="word-count" id="live-word-count">0 words</span>
+    </div>
+
+    <div class="transcript-box" id="live-transcript-box">
+      <div class="transcript-empty" id="live-transcript-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        </svg>
+        <span>Start speaking to see your transcript</span>
+      </div>
+    </div>
+
+    <div class="export-row">
+      <button class="btn-secondary" onclick="exportLiveTxt()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Export .TXT
+      </button>
+      <button class="btn-secondary" onclick="copyLiveTranscript()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy
+      </button>
+      <button class="btn-secondary" onclick="clearLiveTranscript()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Clear
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// Browser support check
+// ============================================================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRecognition) {
+  document.getElementById('support-notice').style.display = 'block';
+}
+
+// ============================================================
+// State
+// ============================================================
+let recognition = null;
+let isTranscribing = false;
+let currentSpeaker = 1;
+let transcriptData = []; // { speaker, text, timestamp }
+let liveTranscriptData = [];
+let activeLiveSpeaker = 0;
+let liveRecognition = null;
+let interimEl = null;
+let startTime = Date.now();
+let wordCount = 0;
+let liveWordCount = 0;
+
+// ============================================================
+// Mode switching
+// ============================================================
+function switchMode(mode) {
+  document.querySelectorAll('.mode-btn').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && mode === 'file') || (i === 1 && mode === 'live'));
+  });
+  document.getElementById('panel-file').classList.toggle('active', mode === 'file');
+  document.getElementById('panel-live').classList.toggle('active', mode === 'live');
+  if (mode === 'live') stopTranscription();
+}
+
+// ============================================================
+// File handling
+// ============================================================
+const uploadZone = document.getElementById('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+function handleFile(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const player = document.getElementById('audio-player');
+  player.src = url;
+  document.getElementById('file-name-display').textContent = file.name;
+  document.getElementById('file-size-display').textContent = formatBytes(file.size);
+  document.getElementById('player-card').classList.add('show');
+  document.getElementById('transcribe-btn').disabled = false;
+  setStatus('File loaded. Hit Start Transcribing then play the audio.', '');
+}
+
+function clearFile() {
+  stopTranscription();
+  document.getElementById('audio-player').src = '';
+  document.getElementById('player-card').classList.remove('show');
+  document.getElementById('file-input').value = '';
+  document.getElementById('transcribe-btn').disabled = true;
+  setStatus('Ready. Upload an audio file to begin.', '');
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+// ============================================================
+// File transcription
+// ============================================================
+function startFileTranscription() {
+  if (!SpeechRecognition) { alert('Web Speech API not supported. Use Chrome or Edge.'); return; }
+  if (isTranscribing) return;
+
+  isTranscribing = true;
+  startTime = Date.now();
+  recognition = new SpeechRecognition();
+  recognition.lang = document.getElementById('lang-select').value;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    setStatus('Listening... Play your audio now.', 'listening');
+    setWaveActive(true);
+    document.getElementById('transcribe-btn').disabled = true;
+    document.getElementById('stop-btn').disabled = false;
+    document.getElementById('toggle-speaker-btn').disabled = false;
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        final += t;
+      } else {
+        interim += t;
+      }
+    }
+
+    if (final) {
+      removeInterim();
+      let cleaned = cleanText(final.trim());
+      if (cleaned) addTranscriptLine(currentSpeaker, cleaned);
+    }
+
+    if (interim) {
+      showInterim(currentSpeaker, interim);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error === 'no-speech') {
+      restartRecognition();
+      return;
+    }
+    setStatus('Error: ' + e.error + '. Try stopping and restarting.', 'error');
+  };
+
+  recognition.onend = () => {
+    if (isTranscribing) restartRecognition();
+    else {
+      setStatus('Transcription stopped.', 'done');
+      setWaveActive(false);
+    }
+  };
+
+  recognition.start();
+}
+
+function restartRecognition() {
+  if (!isTranscribing || !recognition) return;
+  setTimeout(() => {
+    try { recognition.start(); } catch(e) {}
+  }, 300);
+}
+
+function stopTranscription() {
+  isTranscribing = false;
+  if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
+  removeInterim();
+  document.getElementById('transcribe-btn').disabled = !document.getElementById('audio-player').src;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('toggle-speaker-btn').disabled = true;
+  setWaveActive(false);
+  setStatus('Stopped.', 'done');
+}
+
+function toggleSpeaker() {
+  currentSpeaker = currentSpeaker === 1 ? 2 : 1;
+  setStatus('Now capturing: Speaker ' + currentSpeaker + '. Continue playing.', 'listening');
+}
+
+// ============================================================
+// Live mic
+// ============================================================
+function startLiveMic(speaker) {
+  if (!SpeechRecognition) { alert('Web Speech API not supported. Use Chrome or Edge.'); return; }
+
+  if (liveRecognition) {
+    try { liveRecognition.stop(); } catch(e) {}
+    liveRecognition = null;
+  }
+
+  activeLiveSpeaker = speaker;
+  document.getElementById('mic-s1').classList.toggle('recording', speaker === 1);
+  document.getElementById('mic-s2').classList.toggle('recording', speaker === 2);
+
+  liveRecognition = new SpeechRecognition();
+  liveRecognition.lang = document.getElementById('live-lang-select').value;
+  liveRecognition.continuous = true;
+  liveRecognition.interimResults = true;
+
+  liveRecognition.onstart = () => {
+    const name = speaker === 1 ? (document.getElementById('s1-name').value || 'Speaker 1') : (document.getElementById('s2-name').value || 'Speaker 2');
+    setLiveStatus('Listening as ' + name + '...', 'listening');
+    setLiveWaveActive(true);
+  };
+
+  liveRecognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    if (final) {
+      removeLiveInterim();
+      let cleaned = cleanText(final.trim());
+      if (cleaned) addLiveTranscriptLine(speaker, cleaned);
+    }
+    if (interim) showLiveInterim(speaker, interim);
+  };
+
+  liveRecognition.onerror = (e) => {
+    if (e.error === 'no-speech') { restartLive(); return; }
+    setLiveStatus('Error: ' + e.error, 'error');
+  };
+
+  liveRecognition.onend = () => {
+    if (activeLiveSpeaker === speaker) restartLive();
+  };
+
+  liveRecognition.start();
+}
+
+function restartLive() {
+  if (!activeLiveSpeaker || !liveRecognition) return;
+  setTimeout(() => {
+    try { liveRecognition.start(); } catch(e) {}
+  }, 300);
+}
+
+function stopLiveMic() {
+  activeLiveSpeaker = 0;
+  if (liveRecognition) { try { liveRecognition.stop(); } catch(e) {} liveRecognition = null; }
+  removeLiveInterim();
+  document.getElementById('mic-s1').classList.remove('recording');
+  document.getElementById('mic-s2').classList.remove('recording');
+  setLiveStatus('Stopped.', 'done');
+  setLiveWaveActive(false);
+}
+
+// Keyboard shortcuts for live mode
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('panel-live').classList.contains('active')) {
+    if (e.key === '1' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') startLiveMic(1);
+    if (e.key === '2' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') startLiveMic(2);
+    if (e.key === 'Escape') stopLiveMic();
+  }
+  if (document.getElementById('panel-file').classList.contains('active')) {
+    if (e.key === 's' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') toggleSpeaker();
+  }
+});
+
+// ============================================================
+// Transcript rendering - FILE
+// ============================================================
+function addTranscriptLine(speaker, text) {
+  const empty = document.getElementById('transcript-empty');
+  if (empty) empty.style.display = 'none';
+
+  const box = document.getElementById('transcript-box');
+  const entry = { speaker, text, timestamp: Date.now() - startTime };
+  transcriptData.push(entry);
+
+  const line = document.createElement('div');
+  line.className = 'speaker-line s' + speaker;
+  line.innerHTML = `<span class="speaker-label">Speaker ${speaker}</span><span class="speaker-text">${escHtml(text)}</span>`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  updateWordCount();
+}
+
+function showInterim(speaker, text) {
+  removeInterim();
+  const box = document.getElementById('transcript-box');
+  interimEl = document.createElement('div');
+  interimEl.className = 'speaker-line s' + speaker;
+  interimEl.id = 'interim-line';
+  interimEl.innerHTML = `<span class="speaker-label">Speaker ${speaker}</span><span class="speaker-text interim">${escHtml(text)}</span>`;
+  box.appendChild(interimEl);
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeInterim() {
+  const el = document.getElementById('interim-line');
+  if (el) el.remove();
+  interimEl = null;
+}
+
+// ============================================================
+// Transcript rendering - LIVE
+// ============================================================
+let liveInterimEl = null;
+
+function addLiveTranscriptLine(speaker, text) {
+  const empty = document.getElementById('live-transcript-empty');
+  if (empty) empty.style.display = 'none';
+
+  const s1name = document.getElementById('s1-name').value || 'Speaker 1';
+  const s2name = document.getElementById('s2-name').value || 'Speaker 2';
+  const label = speaker === 1 ? s1name : s2name;
+
+  const box = document.getElementById('live-transcript-box');
+  const entry = { speaker, text, label, timestamp: Date.now() };
+  liveTranscriptData.push(entry);
+
+  const line = document.createElement('div');
+  line.className = 'speaker-line s' + speaker;
+  line.innerHTML = `<span class="speaker-label">${escHtml(label)}</span><span class="speaker-text">${escHtml(text)}</span>`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  updateLiveWordCount();
+}
+
+function showLiveInterim(speaker, text) {
+  removeLiveInterim();
+  const box = document.getElementById('live-transcript-box');
+  liveInterimEl = document.createElement('div');
+  liveInterimEl.className = 'speaker-line s' + speaker;
+  liveInterimEl.id = 'live-interim-line';
+  const label = speaker === 1 ? (document.getElementById('s1-name').value || 'Speaker 1') : (document.getElementById('s2-name').value || 'Speaker 2');
+  liveInterimEl.innerHTML = `<span class="speaker-label">${escHtml(label)}</span><span class="speaker-text interim">${escHtml(text)}</span>`;
+  box.appendChild(liveInterimEl);
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeLiveInterim() {
+  const el = document.getElementById('live-interim-line');
+  if (el) el.remove();
+  liveInterimEl = null;
+}
+
+// ============================================================
+// Utilities
+// ============================================================
+function cleanText(text) {
+  // Remove em dashes
+  text = text.replace(/\u2014/g, ',').replace(/---/g, ',').replace(/--/g, ',');
+  // Clean double spaces
+  text = text.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setStatus(msg, state) {
+  document.getElementById('status-text').textContent = msg;
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+function setLiveStatus(msg, state) {
+  document.getElementById('live-status-text').textContent = msg;
+  const dot = document.getElementById('live-status-dot');
+  dot.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+function setWaveActive(active) {
+  document.querySelectorAll('#waveform .wave-bar').forEach(b => b.classList.toggle('active', active));
+}
+
+function setLiveWaveActive(active) {
+  document.querySelectorAll('#live-waveform .wave-bar').forEach(b => b.classList.toggle('active', active));
+}
+
+function updateWordCount() {
+  const total = transcriptData.reduce((s, e) => s + e.text.split(/\s+/).filter(Boolean).length, 0);
+  document.getElementById('word-count').textContent = total + ' words';
+}
+
+function updateLiveWordCount() {
+  const total = liveTranscriptData.reduce((s, e) => s + e.text.split(/\s+/).filter(Boolean).length, 0);
+  document.getElementById('live-word-count').textContent = total + ' words';
+}
+
+// ============================================================
+// Export functions
+// ============================================================
+function buildPlainText(data) {
+  return data.map(e => `Speaker ${e.speaker}: ${e.text}`).join('\n\n');
+}
+
+function buildLivePlainText(data) {
+  return data.map(e => `${e.label}: ${e.text}`).join('\n\n');
+}
+
+function buildSrt(data) {
+  return data.map((e, i) => {
+    const s = msToSrt(e.timestamp);
+    const end = msToSrt(e.timestamp + 3000);
+    return `${i+1}\n${s} --> ${end}\nSpeaker ${e.speaker}: ${e.text}`;
+  }).join('\n\n');
+}
+
+function msToSrt(ms) {
+  const h = Math.floor(ms/3600000).toString().padStart(2,'0');
+  const m = Math.floor((ms%3600000)/60000).toString().padStart(2,'0');
+  const s = Math.floor((ms%60000)/1000).toString().padStart(2,'0');
+  const f = Math.floor((ms%1000)/10).toString().padStart(3,'0');
+  return `${h}:${m}:${s},${f}`;
+}
+
+function downloadFile(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportTxt() {
+  if (!transcriptData.length) { alert('No transcript yet.'); return; }
+  downloadFile(buildPlainText(transcriptData), 'transcript.txt', 'text/plain');
+}
+
+function exportSrt() {
+  if (!transcriptData.length) { alert('No transcript yet.'); return; }
+  downloadFile(buildSrt(transcriptData), 'transcript.srt', 'text/plain');
+}
+
+function copyTranscript() {
+  if (!transcriptData.length) { alert('No transcript yet.'); return; }
+  navigator.clipboard.writeText(buildPlainText(transcriptData)).then(() => {
+    setStatus('Copied to clipboard!', 'done');
+    setTimeout(() => setStatus('Ready.', ''), 2000);
+  });
+}
+
+function clearTranscript() {
+  if (!transcriptData.length) return;
+  if (!confirm('Clear the transcript?')) return;
+  transcriptData = [];
+  const box = document.getElementById('transcript-box');
+  box.innerHTML = '<div class="transcript-empty" id="transcript-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>Transcript will appear here</span></div>';
+  updateWordCount();
+}
+
+function exportLiveTxt() {
+  if (!liveTranscriptData.length) { alert('No transcript yet.'); return; }
+  downloadFile(buildLivePlainText(liveTranscriptData), 'live-transcript.txt', 'text/plain');
+}
+
+function copyLiveTranscript() {
+  if (!liveTranscriptData.length) { alert('No transcript yet.'); return; }
+  navigator.clipboard.writeText(buildLivePlainText(liveTranscriptData)).then(() => {
+    setLiveStatus('Copied to clipboard!', 'done');
+    setTimeout(() => setLiveStatus('Ready.', ''), 2000);
+  });
+}
+
+function clearLiveTranscript() {
+  if (!liveTranscriptData.length) return;
+  if (!confirm('Clear the transcript?')) return;
+  liveTranscriptData = [];
+  const box = document.getElementById('live-transcript-box');
+  box.innerHTML = '<div class="transcript-empty" id="live-transcript-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg><span>Start speaking to see your transcript</span></div>';
+  updateLiveWordCount();
+}
+</script>
+</body>
+</html>
